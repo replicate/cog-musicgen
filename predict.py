@@ -18,6 +18,7 @@ from cog import BasePredictor, Input, Path
 import torch
 from huggingface_hub import snapshot_download, login
 import datetime
+import gradio as gr
 
 # Model specific imports
 import torchaudio
@@ -87,6 +88,7 @@ class Predictor(BasePredictor):
         duration: int = Input(description="Duration of the generated audio in seconds", default=8),
         strategy: str = Input(description="Strategy for generating audio", default="loudness"),
         seed: int = Input(description="Seed for random number generator. Default is -1 for random seed", default=-1),
+        save_as_video: bool = Input(description="Save the generated audio as a video", default=False),
     ) -> Path:
 
         # Set seed or get random seed
@@ -107,6 +109,12 @@ class Predictor(BasePredictor):
         for idx, one_wav in enumerate(wav):
             # Will save under {idx}.wav, with loudness normalization at -14 db LUFS.
             path = audio_write(f'{idx}-{timestamp}', one_wav.cpu(), self.model.sample_rate, strategy=strategy)
+
+        if save_as_video:
+            waveform_video = gr.make_waveform(path)
+            video_path = f"/tmp/{idx}-{timestamp}-waveform.mp4"
+            waveform_video.export(video_path)
+            return Path(video_path)
 
         return Path(path)
 

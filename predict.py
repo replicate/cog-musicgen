@@ -19,6 +19,7 @@ import torch
 from huggingface_hub import snapshot_download, login
 import datetime
 import gradio as gr
+from typing import List
 
 # Model specific imports
 import torchaudio
@@ -88,8 +89,7 @@ class Predictor(BasePredictor):
         duration: int = Input(description="Duration of the generated audio in seconds", default=8),
         strategy: str = Input(description="Strategy for generating audio", default="loudness"),
         seed: int = Input(description="Seed for random number generator. Default is -1 for random seed", default=-1),
-        save_as_video: bool = Input(description="Save the generated audio as a video", default=False),
-    ) -> Path:
+    ) -> List[Path]:
 
         # Set seed or get random seed
         if seed == -1:
@@ -105,18 +105,16 @@ class Predictor(BasePredictor):
             wav = self.model.generate([description])
 
         # Get the current timestamp
+        outputs = []
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         for idx, one_wav in enumerate(wav):
             # Will save under {idx}.wav, with loudness normalization at -14 db LUFS.
             path = audio_write(f'{idx}-{timestamp}', one_wav.cpu(), self.model.sample_rate, strategy=strategy)
+            waveform_video = gr.make_waveform(f'{idx}-{timestamp}.wav')
+            outputs.append(Path(path))
+            outputs.append(Path(waveform_video))
 
-        if save_as_video:
-            waveform_video = gr.make_waveform(path)
-            video_path = f"/tmp/{idx}-{timestamp}-waveform.mp4"
-            waveform_video.export(video_path)
-            return Path(video_path)
-
-        return Path(path)
+        return outputs
 
     def _maybe_download(self, model_id: str, model_path: str, remote_path: str = None) -> bool:
         """

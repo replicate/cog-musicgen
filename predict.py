@@ -19,7 +19,7 @@ import torch
 from huggingface_hub import snapshot_download, login
 import datetime
 
-# Model specific imports 
+# Model specific imports
 import torchaudio
 import subprocess
 import typing as tp
@@ -53,10 +53,10 @@ class Predictor(BasePredictor):
             if self.remote_model_path:
                 # try to download from remote
                 downloaded = self._maybe_download(self.model_id, self.model_path, self.remote_model_path)
-            
+
             if not downloaded:
                 # download from HuggingFace Hub
-                self.model = self._load_model(model_path=self.model_path, cls=self.model_cls, model_id=self.model_id, **self.model_load_args)                
+                self.model = self._load_model(model_path=self.model_path, cls=self.model_cls, model_id=self.model_id, **self.model_load_args)
         else:
             self.model = self._load_model(model_path=self.model_path, cls=self.model_cls, model_id=self.model_id, **self.model_load_args)
 
@@ -67,13 +67,13 @@ class Predictor(BasePredictor):
         if device is None:
             device = self.device
 
- 
+
         name = next((key for key, val in HF_MODEL_CHECKPOINTS_MAP.items() if val == model_id), None)
         compression_model = load_compression_model(name, device=device, cache_dir=model_path)
         lm = load_lm_model(name, device=device, cache_dir=model_path)
 
         return MusicGen(name, compression_model, lm)
-    
+
     def _load_tokenizer(
             self,
             tokenizer_path: str,
@@ -88,7 +88,7 @@ class Predictor(BasePredictor):
         strategy: str = Input(description="Strategy for generating audio", default="loudness"),
         seed: int = Input(description="Seed for random number generator. Default is -1 for random seed", default=-1),
     ) -> Path:
-        
+
         # Set seed or get random seed
         if seed == -1:
             seed = torch.seed()
@@ -101,7 +101,7 @@ class Predictor(BasePredictor):
             wav = self.model.generate_with_chroma([description], melody[None], sr)
         else:
             wav = self.model.generate([description])
-  
+
         # Get the current timestamp
         timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
         for idx, one_wav in enumerate(wav):

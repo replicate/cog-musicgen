@@ -3,6 +3,7 @@ Adapted from https://github.com/chavinlo/musicgen_trainer/blob/main/train.y
 """
 
 import os
+import csv
 
 MODEL_PATH = '/src/models/'
 os.environ['TRANSFORMERS_CACHE'] = MODEL_PATH
@@ -21,6 +22,7 @@ from torch.optim import AdamW
 import torch.nn.functional as F
 from zipfile import ZipFile
 import shutil
+import torch.nn.functional as F
 
 from torch.utils.data import Dataset
     
@@ -49,47 +51,13 @@ def _load_model(
 
     return MusicGen(model_name, compression_model, lm)
 
-class AudioDataset(Dataset):
-    def __init__(self, 
-                data_dir
-                ):
-        self.data_dir = data_dir
-        self.data_map = []
-
-        dir_map = os.listdir(data_dir)
-        for d in dir_map:
-            name, ext = os.path.splitext(d)
-            if ext == '.wav':
-                if os.path.exists(os.path.join(data_dir, name + '.txt')):
-                    self.data_map.append({
-                        "audio": os.path.join(data_dir, d),
-                        "label": os.path.join(data_dir, name + '.txt')
-                    })
-                else:
-                    raise ValueError(f'No label file for {name}')
-                
-    def __len__(self):
-        return len(self.data_map)
-    
-    def __getitem__(self, idx):
-        data = self.data_map[idx]
-        audio = data['audio']
-        label = data['label']
-
-        return audio, label
-
-def count_nans(tensor):
-    nan_mask = torch.isnan(tensor)
-    num_nans = torch.sum(nan_mask).item()
-    return num_nans
-
-def preprocess_audio(audio_path, model: MusicGen, duration: int = 30):
+def load_and_preprocess_audio(audio_path, sample_rate = 32000, duration: int = 30):
     wav, sr = torchaudio.load(audio_path)
-    wav = torchaudio.functional.resample(wav, sr, model.sample_rate)
+    # wav = torchaudio.functional.resample(wav, sr, sample_rate)
     wav = wav.mean(dim=0, keepdim=True)
-    end_sample = int(model.sample_rate * duration)
+    end_sample = int(sample_rate * duration)
 
-        # Add padding if necessary
+    # Add padding if necessary
     if wav.shape[1] < end_sample:
         pad_size = end_sample - wav.shape[1]
         wav = F.pad(wav, pad=(0, pad_size))
@@ -97,19 +65,68 @@ def preprocess_audio(audio_path, model: MusicGen, duration: int = 30):
     wav = wav[:, :end_sample]
 
     assert wav.shape[0] == 1
-    assert wav.shape[1] == model.sample_rate * duration
+    assert wav.shape[1] == sample_rate * duration
 
-    wav = wav.cuda()
-    wav = wav.unsqueeze(1)
+    # wav = wav.unsqueeze(1)
 
-    with torch.no_grad():
-        gen_audio = model.compression_model.encode(wav)
+    return(wav)
 
-    codes, scale = gen_audio
+    # with torch.no_grad():
+    #     gen_audio = model.compression_model.encode(wav)
 
-    assert scale is None
+    # codes, scale = gen_audio
 
-    return codes
+    # assert scale is None
+
+    # return codes
+
+
+class AudioDataset(Dataset):
+    def __init__(self, 
+                # data_dir: tp.Optional[str] = None,
+                data_map: str,
+                duration: int = 30,                
+                ):
+
+        # if data_dir and data_map:
+        #     raise ValueError('Only one of data_dir or data_map should be provided')
+        # if data_dir:
+        #     self.data_map = self._build_data_map_from_files(data_dir)
+        # elif data_map:
+        self.data_map = self._build_data_map_from_tsv(data_map)
+        self.duration = duration        
+                
+    def __len__(self):
+        return len(self.data_map)
+    
+    def __getitem__(self, idx):
+        data = self.data_map[idx]
+        audio_path = data['audio']
+        label = data['label']
+
+        # Load and preprocess audio here
+        audio = load_and_preprocess_audio(audio_path, self.duration)
+
+        return audio, label
+    
+    def _build_data_map_from_tsv(self, data_map_path):
+        data_map = []
+
+        with open(data_map_path, 'r') as f:
+            reader = csv.DictReader(f, delimiter='\t')
+            for row in reader:
+                data_map.append({
+                    "audio": row['filename'],
+                    "label": row['prompt']
+                })
+
+        return data_map
+
+def count_nans(tensor):
+    nan_mask = torch.isnan(tensor)
+    num_nans = torch.sum(nan_mask).item()
+    return num_nans
+
 
 def fixnan(tensor: torch.Tensor):
     nan_mask = torch.isnan(tensor)
@@ -135,19 +152,27 @@ def train(
         epochs: int = Input(description="Number of epochs to train for", default=5),
         save_step: int = Input(description="Save model every n steps", default=None),
         batch_size: int = Input(description="Batch size", default=1),
+        num_dataloader_workers: int = Input(description="Number of workers for data loading", default=4),
+        classifier_free_guidance_dropout_p: float = Input(
+            description="Apply Classifier Free Guidance dropout with this probability, meaning all conditioning attributes are dropped with the same probability. If 0, dropout will not be applied.",
+            default = 0,
+            ge=0,
+            le=1
+        )
+        
 ) -> TrainingOutput:
     
     # For local runs, we'll support overriding `dataset_path` if `train_data` exists. 
     # That way we can avoid having to tar/untar the dataset for every training run.
-    if os.path.exists('/src/train_data'):
-        dataset_path = '/src/train_data'
+    if True:
+        dataset_path = '/src/data/megaman/data_map.tsv'
     else:
         # decompress file at dataset_path
         subprocess.run(['tar', '-xvzf', dataset_path, '-C', '/src/train_data'])
         dataset_path = '/src/train_data'
 
-    if batch_size > 1:
-        raise ValueError("Batch size > 1 not supported yet")
+    # if batch_size > 1:
+    #     raise ValueError("Batch size > 1 not supported yet")
     
     output_dir = DIST_OUT_DIR
     if os.path.exists(output_dir):
@@ -159,8 +184,8 @@ def train(
     model = _load_model(MODEL_PATH, model_name=model_name)
     model.lm = model.lm.to(torch.float32) #important
     
-    dataset = AudioDataset(dataset_path)
-    train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    dataset = AudioDataset(dataset_path, model)
+    train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_dataloader_workers)
 
     learning_rate = lr
     model.lm.train()
@@ -180,27 +205,28 @@ def train(
     current_step = 0
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
 
+            
+    # Not implementing this right now, but we could add it later
+    if classifier_free_guidance_dropout_p > 0:
+        cfg_droput = ClassifierFreeGuidanceDropout(p=classifier_free_guidance_dropout_p)
+
     for epoch in range(num_epochs):
-        for batch_idx, (audio, label) in enumerate(train_dataloader):
+        for batch_idx, (audio, labels) in enumerate(train_dataloader):
+            
             optimizer.zero_grad()
+            audio = audio.cuda()
+            gen_audio = model.compression_model.encode(audio)
+            codes, scale = gen_audio
+            assert scale is None
 
-            #where audio and label are just paths
-            audio = audio[0]
-            label = label[0]
+            conditions, _ = model._prepare_tokens_and_attributes(labels, None)
+            
+            if classifier_free_guidance_dropout_p > 0:
+                # Drop conditions with probability p
+                conditions = cfg_droput(conditions)
 
-            audio = preprocess_audio(audio, model) #returns tensor
-            text = open(label, 'r').read().strip()
-
-            attributes, _ = model._prepare_tokens_and_attributes([text], None)
-
-            conditions = attributes
-            null_conditions = ClassifierFreeGuidanceDropout(p=1.0)(conditions)
-            conditions = conditions + null_conditions
             tokenized = model.lm.condition_provider.tokenize(conditions)
-            cfg_conditions = model.lm.condition_provider(tokenized)
-            condition_tensors = cfg_conditions
-
-            codes = torch.cat([audio, audio], dim=0)
+            condition_tensors = model.lm.condition_provider(tokenized)
 
             with torch.autocast(device_type="cuda", dtype=torch.float16):
                 lm_output = model.lm.compute_predictions(
@@ -209,23 +235,14 @@ def train(
                     condition_tensors=condition_tensors
                 )
 
-                codes = codes[0]
-                logits = lm_output.logits[0]
-                mask = lm_output.mask[0]
+                one_hot_codes = F.one_hot(codes, num_classes = 2048).to('cuda')
+                logits = lm_output.logits
+                mask = lm_output.mask
 
-                codes = one_hot_encode(codes, num_classes=2048)
+                
+                loss = criterion(logits[mask], one_hot_codes[mask])
 
-                codes = codes.cuda()
-                logits = logits.cuda()
-                mask = mask.cuda()
-
-                mask = mask.view(-1)
-                masked_logits = logits.view(-1, 2048)[mask]
-                masked_codes = codes.view(-1, 2048)[mask]
-
-                loss = criterion(masked_logits,masked_codes)
-
-            assert count_nans(masked_logits) == 0
+            assert count_nans(logits[mask]) == 0
             
             scaler.scale(loss).backward()
 

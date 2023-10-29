@@ -222,7 +222,7 @@ class Predictor(BasePredictor):
 
         if output_format == "mp3":
             mp3_path = "out.mp3"
-            subprocess.call(["ffmpeg", "-i", wav_path, mp3_path])
+            subprocess.call(["ffmpeg", "-i", wav_path, "-y", mp3_path])
             os.remove(wav_path)
             path = mp3_path
         else:

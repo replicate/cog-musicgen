@@ -7,22 +7,40 @@ build:
   cuda: "11.7"
 
   # a list of ubuntu apt packages to install
-  # system_packages:
-    # - "libgl1-mesa-glx"
-    # - "libglib2.0-0"
+  system_packages:
+    - ffmpeg
 
   # python version in the form '3.8' or '3.8.12'
   python_version: "3.9"
 
   # a list of packages in the format <package-name>==<version>
   python_packages:
+    - "av"
+    - "einops"
+    - "flashy>=0.0.1"
+    - "hydra-core>=1.1"
+    - "hydra_colorlog"
+    - "julius"
+    - "num2words"
+    - "numpy"
+    - "sentencepiece"
+    - "spacy==3.5.2"
     - "torch==2.0.1"
+    - "torchaudio>=2.0.0"
+    - "huggingface_hub"
+    - "tqdm"
+    - "transformers>=4.31.0"
+    - "xformers==0.0.22"
+    - "demucs"
+    - "librosa"
+    - "gradio"
+    - "torchmetrics"
+    - "encodec"
+    - "protobuf"
   
   # commands run after the environment is setup
-  run:
-    - "pip install git+https://github.com/facebookresearch/audiocraft.git"
-    - "apt-get update && apt-get install -y ffmpeg"
+  # run:
 
 # predict.py defines how predictions are run on your model
 predict: "predict.py:Predictor"
-train: "train.py:train"
+# train: "train.py:train"

@@ -8,6 +8,7 @@ import random
 MODEL_PATH = "/src/models/"
 os.environ["TRANSFORMERS_CACHE"] = MODEL_PATH
 os.environ["TORCH_HOME"] = MODEL_PATH
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
 
 import shutil
@@ -38,48 +39,18 @@ class Predictor(BasePredictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
         self.mbd = MultiBandDiffusion.get_mbd_musicgen()
-
-        self.stereo_melody_model = self._load_model(
-            model_path=MODEL_PATH,
-            cls=MusicGen,
-            model_id="facebook/musicgen-stereo-melody-large",
-        )
-
-        self.stereo_large_model = self._load_model(
-            model_path=MODEL_PATH,
-            cls=MusicGen,
-            model_id="facebook/musicgen-stereo-large",
-        )
-
-        self.melody_model = self._load_model(
-            model_path=MODEL_PATH,
-            cls=MusicGen,
-            model_id="facebook/musicgen-melody-large",
-        )
-
-        self.large_model = self._load_model(
-            model_path=MODEL_PATH,
-            cls=MusicGen,
-            model_id="facebook/musicgen-large",
-        )
+        self.loaded_models = {}
 
     def _load_model(
         self,
         model_path: str,
-        cls: Optional[any] = None,
-        load_args: Optional[dict] = {},
         model_id: Optional[str] = None,
-        device: Optional[str] = None,
     ) -> MusicGen:
-        if device is None:
-            device = self.device
-
         compression_model = load_compression_model(
-            model_id, device=device, cache_dir=model_path
+            model_id, device=self.device, cache_dir=model_path
         )
-        lm = load_lm_model(model_id, device=device, cache_dir=model_path)
+        lm = load_lm_model(model_id, device=self.device, cache_dir=model_path)
 
         return MusicGen(model_id, compression_model, lm)
 
@@ -171,22 +142,21 @@ class Predictor(BasePredictor):
                 "Multi-Band Diffusion is only available with non-stereo models."
             )
 
-        if model_version == "stereo-melody-large":
-            model = self.stereo_melody_model
-        elif model_version == "stereo-large":
-            model = self.stereo_large_model
-        elif model_version == "melody-large":
-            model = self.melody_model
-        elif model_version == "large":
-            model = self.large_model
+        if model_version not in self.loaded_models:
+            self.loaded_models[model_version] = self._load_model(
+                model_path=MODEL_PATH,
+                model_id=f"facebook/musicgen-{model_version}",
+            )
+        model = self.loaded_models[model_version]
 
-        set_generation_params = lambda duration: model.set_generation_params(
-            duration=duration,
-            top_k=top_k,
-            top_p=top_p,
-            temperature=temperature,
-            cfg_coef=classifier_free_guidance,
-        )
+        def set_generation_params(duration):
+            return model.set_generation_params(
+                duration=duration,
+                top_k=top_k,
+                top_p=top_p,
+                temperature=temperature,
+                cfg_coef=classifier_free_guidance,
+            )
 
         if not seed or seed == -1:
             seed = torch.seed() % 2**32 - 1

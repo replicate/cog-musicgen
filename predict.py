@@ -41,8 +41,6 @@ class Predictor(BasePredictor):
             self.weights_downloader.download_weights(model, dest)
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-
-        self.mbd = MultiBandDiffusion.get_mbd_musicgen()
         self.loaded_models = {}
 
         elapsed_time = time.time() - start
@@ -151,6 +149,11 @@ class Predictor(BasePredictor):
             raise ValueError(
                 "Multi-Band Diffusion is only available with non-stereo models."
             )
+
+        if multi_band_diffusion and not hasattr(self, 'mbd'):
+            print("Loading MultiBandDiffusion...")
+            self.mbd = MultiBandDiffusion.get_mbd_musicgen()
+            print("MultiBandDiffusion loaded successfully.")
 
         if model_version not in self.loaded_models:
             print(f"Loading model {model_version}...")

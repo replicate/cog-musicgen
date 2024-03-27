@@ -64,6 +64,7 @@ class Predictor(BasePredictor):
             cls=MusicGen,
             model_id="facebook/musicgen-large",
         )
+
     def _load_model(
         self,
         model_path: str,
@@ -72,7 +73,6 @@ class Predictor(BasePredictor):
         model_id: Optional[str] = None,
         device: Optional[str] = None,
     ) -> MusicGen:
-
         if device is None:
             device = self.device
 
@@ -88,7 +88,13 @@ class Predictor(BasePredictor):
         model_version: str = Input(
             description="Model to use for generation. If set to 'encode-decode', the audio specified via 'input_audio' will simply be encoded and then decoded.",
             default="stereo-melody-large",
-            choices=["stereo-melody-large", "stereo-large", "melody-large", "large", "encode-decode"],
+            choices=[
+                "stereo-melody-large",
+                "stereo-large",
+                "melody-large",
+                "large",
+                "encode-decode",
+            ],
         ),
         prompt: str = Input(
             description="A description of the music you want to generate.", default=None
@@ -148,17 +154,22 @@ class Predictor(BasePredictor):
             default=None,
         ),
     ) -> Path:
-
         if prompt is None and input_audio is None:
             raise ValueError("Must provide either prompt or input_audio")
         if continuation and not input_audio:
             raise ValueError("Must provide `input_audio` if continuation is `True`.")
-        if (model_version == "stereo-large" or model_version=="large") and input_audio and not continuation:
+        if (
+            (model_version == "stereo-large" or model_version == "large")
+            and input_audio
+            and not continuation
+        ):
             raise ValueError(
                 "`stereo-large` and `large` model does not support melody input. Set `model_version='stereo-melody-large'` or `model_version='melody-large'` to condition on audio input."
             )
         if "stereo" in model_version and multi_band_diffusion:
-            raise ValueError("Multi-Band Diffusion is only available with non-stereo models.")
+            raise ValueError(
+                "Multi-Band Diffusion is only available with non-stereo models."
+            )
 
         if model_version == "stereo-melody-large":
             model = self.stereo_melody_model
@@ -178,7 +189,7 @@ class Predictor(BasePredictor):
         )
 
         if not seed or seed == -1:
-            seed = torch.seed() % 2 ** 32 - 1
+            seed = torch.seed() % 2**32 - 1
             set_all_seeds(seed)
         set_all_seeds(seed)
         print(f"Using seed {seed}")
@@ -216,13 +227,13 @@ class Predictor(BasePredictor):
             input_audio_duration = input_audio_wavform.shape[-1] / sr
 
             if continuation:
-                set_generation_params(duration)# + input_audio_duration)
+                set_generation_params(duration)  # + input_audio_duration)
                 wav, tokens = model.generate_continuation(
                     prompt=input_audio_wavform,
                     prompt_sample_rate=sr,
                     descriptions=[prompt],
                     progress=True,
-                    return_tokens=True
+                    return_tokens=True,
                 )
                 if multi_band_diffusion:
                     wav = self.mbd.tokens_to_wav(tokens)
@@ -258,7 +269,6 @@ class Predictor(BasePredictor):
     def _preprocess_audio(
         audio_path, model: MusicGen, duration: tp.Optional[int] = None
     ):
-
         wav, sr = torchaudio.load(audio_path)
         wav = torchaudio.functional.resample(wav, sr, model.sample_rate)
         wav = wav.mean(dim=0, keepdim=True)

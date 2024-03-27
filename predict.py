@@ -10,18 +10,10 @@ os.environ["TRANSFORMERS_CACHE"] = MODEL_PATH
 os.environ["TORCH_HOME"] = MODEL_PATH
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
-
-import shutil
-
-from tempfile import TemporaryDirectory
 from pathlib import Path
-from distutils.dir_util import copy_tree
 from typing import Optional
 from cog import BasePredictor, Input, Path
 import torch
-import datetime
-
-# Model specific imports
 import torchaudio
 import subprocess
 import typing as tp
@@ -33,11 +25,17 @@ from audiocraft.models.loaders import (
     load_lm_model,
 )
 from audiocraft.data.audio import audio_write
+from weights_downloader import WeightsDownloader
 
 
 class Predictor(BasePredictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
+        self.weights_downloader = WeightsDownloader()
+        self.weights_downloader.download_weights(
+            "955717e8-8726e21a.th", "models/hub/checkpoints"
+        )
+
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.mbd = MultiBandDiffusion.get_mbd_musicgen()
         self.loaded_models = {}
@@ -143,10 +141,12 @@ class Predictor(BasePredictor):
             )
 
         if model_version not in self.loaded_models:
+            print(f"Loading model {model_version}...")
             self.loaded_models[model_version] = self._load_model(
                 model_path=MODEL_PATH,
                 model_id=f"facebook/musicgen-{model_version}",
             )
+            print(f"Model {model_version} loaded successfully.")
         model = self.loaded_models[model_version]
 
         def set_generation_params(duration):
@@ -194,10 +194,9 @@ class Predictor(BasePredictor):
             input_audio_wavform = input_audio[
                 ..., int(sr * continuation_start) : int(sr * continuation_end)
             ]
-            input_audio_duration = input_audio_wavform.shape[-1] / sr
 
             if continuation:
-                set_generation_params(duration)  # + input_audio_duration)
+                set_generation_params(duration)
                 wav, tokens = model.generate_continuation(
                     prompt=input_audio_wavform,
                     prompt_sample_rate=sr,

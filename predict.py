@@ -34,7 +34,6 @@ class Predictor(BasePredictor):
         for model, dest in [
             ("955717e8-8726e21a.th", "models/hub/checkpoints"),
             ("models--facebook--musicgen-small", "models/hub"),
-            ("models--facebook--multiband-diffusion", "models/hub"),
             ("models--facebook--encodec_32khz", "models/hub"),
             ("models--t5-base", "models/hub"),
         ]:
@@ -150,8 +149,11 @@ class Predictor(BasePredictor):
                 "Multi-Band Diffusion is only available with non-stereo models."
             )
 
-        if multi_band_diffusion and not hasattr(self, 'mbd'):
+        if multi_band_diffusion and not hasattr(self, "mbd"):
             print("Loading MultiBandDiffusion...")
+            self.weights_downloader.download_weights(
+                "models--facebook--multiband-diffusion", "models/hub"
+            )
             self.mbd = MultiBandDiffusion.get_mbd_musicgen()
             print("MultiBandDiffusion loaded successfully.")
 

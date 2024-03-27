@@ -1,0 +1,11 @@
+**/__pycache__
+**/.git
+**/.github
+**/.ci
+
+# Outputs
+**/*.wav
+**/*.mp3
+
+# Models
+models/

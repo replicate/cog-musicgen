@@ -37,7 +37,6 @@ build:
     - "torchmetrics"
     - "encodec"
     - "protobuf"
-    - "hf_transfer"
 
   # commands run after the environment is setup
   run:

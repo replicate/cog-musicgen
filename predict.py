@@ -6,9 +6,9 @@ import random
 
 # We need to set `TRANSFORMERS_CACHE` before any imports, which is why this is up here.
 MODEL_PATH = "/src/models/"
-os.environ["TRANSFORMERS_CACHE"] = MODEL_PATH
+os.environ["HF_HOME"] = MODEL_PATH
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ["TORCH_HOME"] = MODEL_PATH
-os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
 from pathlib import Path
 from typing import Optional
@@ -32,9 +32,14 @@ class Predictor(BasePredictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
         self.weights_downloader = WeightsDownloader()
-        self.weights_downloader.download_weights(
-            "955717e8-8726e21a.th", "models/hub/checkpoints"
-        )
+        for model, dest in [
+            ("955717e8-8726e21a.th", "models/hub/checkpoints"),
+            ("models--facebook--musicgen-small", "models/hub"),
+            ("models--facebook--multiband-diffusion", "models/hub"),
+            ("models--facebook--encodec_32khz", "models/hub"),
+            ("models--t5-base", "models/hub"),
+        ]:
+            self.weights_downloader.download_weights(model, dest)
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.mbd = MultiBandDiffusion.get_mbd_musicgen()
@@ -44,7 +49,12 @@ class Predictor(BasePredictor):
         self,
         model_path: str,
         model_id: Optional[str] = None,
+        model_version: Optional[str] = None,
     ) -> MusicGen:
+        self.weights_downloader.download_weights(
+            f"models--facebook--musicgen-{model_version}"
+        )
+
         compression_model = load_compression_model(
             model_id, device=self.device, cache_dir=model_path
         )
@@ -55,14 +65,13 @@ class Predictor(BasePredictor):
     def predict(
         self,
         model_version: str = Input(
-            description="Model to use for generation. If set to 'encode-decode', the audio specified via 'input_audio' will simply be encoded and then decoded.",
+            description="Model to use for generation",
             default="stereo-melody-large",
             choices=[
                 "stereo-melody-large",
                 "stereo-large",
                 "melody-large",
                 "large",
-                "encode-decode",
             ],
         ),
         prompt: str = Input(
@@ -145,6 +154,7 @@ class Predictor(BasePredictor):
             self.loaded_models[model_version] = self._load_model(
                 model_path=MODEL_PATH,
                 model_id=f"facebook/musicgen-{model_version}",
+                model_version=model_version,
             )
             print(f"Model {model_version} loaded successfully.")
         model = self.loaded_models[model_version]
@@ -169,14 +179,6 @@ class Predictor(BasePredictor):
             wav, tokens = model.generate([prompt], progress=True, return_tokens=True)
             if multi_band_diffusion:
                 wav = self.mbd.tokens_to_wav(tokens)
-
-        elif model_version == "encode-decode":
-            encoded_audio = self._preprocess_audio(input_audio, model)
-            set_generation_params(duration)
-            if multi_band_diffusion:
-                wav = self.mbd.tokens_to_wav(tokens)
-            else:
-                wav = model.compression_model.decode(encoded_audio).squeeze(0)
 
         else:
             input_audio, sr = torchaudio.load(input_audio)

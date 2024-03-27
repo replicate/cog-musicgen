@@ -3,14 +3,7 @@
 
 import os
 import random
-
-# We need to set `TRANSFORMERS_CACHE` before any imports, which is why this is up here.
-MODEL_PATH = "/src/models/"
-os.environ["HF_HOME"] = MODEL_PATH
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
-os.environ["TORCH_HOME"] = MODEL_PATH
-
-from pathlib import Path
+import time
 from typing import Optional
 from cog import BasePredictor, Input, Path
 import torch
@@ -27,10 +20,16 @@ from audiocraft.models.loaders import (
 from audiocraft.data.audio import audio_write
 from weights_downloader import WeightsDownloader
 
+MODEL_PATH = "/src/models/"
+os.environ["HF_HOME"] = MODEL_PATH
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["TORCH_HOME"] = MODEL_PATH
+
 
 class Predictor(BasePredictor):
     def setup(self):
         """Load the model into memory to make running multiple predictions efficient"""
+        start = time.time()
         self.weights_downloader = WeightsDownloader()
         for model, dest in [
             ("955717e8-8726e21a.th", "models/hub/checkpoints"),
@@ -42,8 +41,12 @@ class Predictor(BasePredictor):
             self.weights_downloader.download_weights(model, dest)
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
         self.mbd = MultiBandDiffusion.get_mbd_musicgen()
         self.loaded_models = {}
+
+        elapsed_time = time.time() - start
+        print(f"Setup time: {elapsed_time:.2f}s")
 
     def _load_model(
         self,
